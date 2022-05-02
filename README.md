@@ -1,7 +1,7 @@
 - 👋 Hi, I’m @babbiniello
 - 👀 I’m interested in building pinball machine based on raspberry pi
 - 🌱 I’m currently learning how to optimize the project
-- 💞️ Follow me on istagram and tik tok
+- 💞️ Follow me on instagram and tik tok (pinball_maker)
 - 📫 babbiniello@gmail.com
 
 <!---
