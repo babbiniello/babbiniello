@@ -26,27 +26,27 @@ class Grafica:
         resizedImage = img.resize((imgWidthNew,imgHeightNew), Image.ANTIALIAS)   
         image = ImageTk.PhotoImage(resizedImage)
 
-        sfondo = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
-        sfondo.image = image
-        sfondo.place(x=0, y=0) # Position image
+        self.sfondo = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
+        self.sfondo.image = image
+        self.sfondo.place(x=0, y=0) # Position image
         # ----------------------------------- SFONDO ------------------------------------------
         
         # ----------------------------------- CANVAS ------------------------------------------
         lunghezzaCanvas = int(w*2360/2560)
-        x_position = int((w-lunghezzaCanvas)/2)
-        y_position = int(h*1000/1440)
-        altezzaCanvas = h-y_position
-        canvas1 = Canvas(window, width=lunghezzaCanvas, height=altezzaCanvas, bg="black", borderwidth=0, highlightthickness=0)
-        canvas1.place(x=x_position, y=y_position) # Position canvas
+        self.x_position_canvas = int((w-lunghezzaCanvas)/2)
+        self.y_position_canvas = int(h*1000/1440)
+        altezzaCanvas = h-self.y_position_canvas
+        self.canvas1 = Canvas(window, width=lunghezzaCanvas, height=altezzaCanvas, bg="black", borderwidth=0, highlightthickness=0)
+        self.canvas1.place(x=self.x_position_canvas, y=self.y_position_canvas) # Position canvas
         # ----------------------------------- CANVAS ------------------------------------------
         
         # ----------------------------------- INFORMAZIONI ---------------------------------------
-        labelInfo = Label(canvas1, textvariable = self.textInfo, font=("LED Dot-Matrix", int(80*w/2560)), fg="orange", bg="black")
+        labelInfo = Label(self.canvas1, textvariable = self.textInfo, font=("LED Dot-Matrix", int(80*w/2560)), fg="orange", bg="black")
         labelInfo.place(x=int(lunghezzaCanvas/2), y=int(altezzaCanvas/6), anchor="center") # Position center
         # ----------------------------------- INFORMAZIONI ---------------------------------------
 
         # ----------------------------------- PUNTEGGIO ---------------------------------------
-        labelPunteggio=Label(canvas1, textvariable = self.textScore, font=("LED Dot-Matrix", int(160*w/2560)), fg="orange", bg="black")
+        labelPunteggio=Label(self.canvas1, textvariable = self.textScore, font=("LED Dot-Matrix", int(160*w/2560)), fg="orange", bg="black")
         labelPunteggio.place(x=int(lunghezzaCanvas/2), y=int(altezzaCanvas/1.8), anchor="center") # Position center
         # ----------------------------------- PUNTEGGIO ---------------------------------------
         
@@ -64,7 +64,7 @@ class Grafica:
         self.semaforo1 = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
         self.semaforo1.image = image
         self.x_sem1 = int(w*600/2560)
-        self.y_sem1 = int(h*488/1440)
+        self.y_sem1 = int(h*489/1440)
         # ----------------------------------- SEMAFORO 1 --------------------------------------
         
         # ----------------------------------- SEMAFORO 2 --------------------------------------
@@ -80,7 +80,7 @@ class Grafica:
         self.semaforo2 = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
         self.semaforo2.image = image
         self.x_sem2 = int(w*874/2560)
-        self.y_sem2= int(h*488/1440)
+        self.y_sem2= int(h*489/1440)
         # ----------------------------------- SEMAFORO 2 --------------------------------------
         
         # ----------------------------------- SEMAFORO 3 --------------------------------------
@@ -96,7 +96,7 @@ class Grafica:
         self.semaforo3 = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
         self.semaforo3.image = image
         self.x_sem3= int(w*1131/2560)
-        self.y_sem3= int(h*488/1440)
+        self.y_sem3= int(h*489/1440)
         # ----------------------------------- SEMAFORO 3 --------------------------------------
 
         # ----------------------------------- SEMAFORO 4 --------------------------------------
@@ -112,7 +112,7 @@ class Grafica:
         self.semaforo4 = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
         self.semaforo4.image = image
         self.x_sem4= int(w*1388/2560)
-        self.y_sem4= int(h*488/1440)
+        self.y_sem4= int(h*489/1440)
         # ----------------------------------- SEMAFORO 4 --------------------------------------
 
         # ----------------------------------- SEMAFORO 5 --------------------------------------
@@ -128,26 +128,26 @@ class Grafica:
         self.semaforo5 = Label(image=image, borderwidth=0, highlightthickness=0, padx=0, pady=0)
         self.semaforo5.image = image
         self.x_sem5= int(w*1644/2560)
-        self.y_sem5= int(h*488/1440)
+        self.y_sem5= int(h*489/1440)
         # ----------------------------------- SEMAFORO 5 --------------------------------------
         
         # -------------------------------------- BALL -----------------------------------------
-        labelBall=Label(canvas1, textvariable = self.textBall, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
+        labelBall=Label(self.canvas1, textvariable = self.textBall, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
         labelBall.place(x=int(lunghezzaCanvas), y=int(altezzaCanvas/9), anchor="e")
         # -------------------------------------- BALL -----------------------------------------
         
         # -------------------------------------- X -----------------------------------------
-        labelX=Label(canvas1, textvariable = self.textX, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
+        labelX=Label(self.canvas1, textvariable = self.textX, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
         labelX.place(x=int(lunghezzaCanvas), y=int(altezzaCanvas), anchor="se")
         # -------------------------------------- X -----------------------------------------
 
         # -------------------------------------- POSITION -----------------------------------------
-        labelPosition=Label(canvas1, textvariable = self.textPosition, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
+        labelPosition=Label(self.canvas1, textvariable = self.textPosition, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
         labelPosition.place(x=0, y=int(altezzaCanvas/9), anchor="w")
         # -------------------------------------- POSITION -----------------------------------------
         
         # -------------------------------------- TYRES TURBO -----------------------------------------
-        labelTyresTurbo=Label(canvas1, textvariable = self.textTyresTurbo, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
+        labelTyresTurbo=Label(self.canvas1, textvariable = self.textTyresTurbo, font=("LED Dot-Matrix", int(50*w/2560)), fg="orange", bg="black")
         labelTyresTurbo.place(x=0, y=int(altezzaCanvas), anchor="sw")
         # -------------------------------------- TYRES -----------------------------------------
 
@@ -169,11 +169,11 @@ class Grafica:
         self.semaforo5.place(x=self.x_sem5, y=self.y_sem5)
         
     def spegni_sem(self):
-        self.semaforo1.place(x=-10000, y=-10000)
-        self.semaforo2.place(x=-10000, y=-10000)
-        self.semaforo3.place(x=-10000, y=-10000)
-        self.semaforo4.place(x=-10000, y=-10000)
-        self.semaforo5.place(x=-10000, y=-10000)
+        self.semaforo1.place_forget()
+        self.semaforo2.place_forget()
+        self.semaforo3.place_forget()
+        self.semaforo4.place_forget()
+        self.semaforo5.place_forget()
         
     def setInfoScore(self, newInfo, newScore):
         self.textInfo.set(newInfo)
@@ -189,5 +189,13 @@ class Grafica:
         self.textPosition.set(position)
     
     def setTyresTurbo(self, tyresTurboStatus):
-        self.textTyresTurbo.set(tyresTurboStatus)        
+        self.textTyresTurbo.set(tyresTurboStatus)
+        
+    def hideScoreGraphic(self):
+        self.canvas1.place_forget()
+        self.sfondo.place_forget()
+        
+    def showScoreGraphic(self):
+        self.sfondo.place(x=0, y=0) # Position image
+        self.canvas1.place(x=self.x_position_canvas, y=self.y_position_canvas) # Position canvas
 ############################################# GRAPHICS #########################################

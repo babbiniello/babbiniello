@@ -105,6 +105,8 @@ posPrec = 21
 
 shutdown = 0 #conteggio spegnimento
 
+aFire = False #se in modalità autofire (True) inibisce il lancio premendo il tasto
+
 ########################################### begin INIT ###########################################
 
 def initSwitchPins(portNumber, ports):
@@ -375,8 +377,8 @@ def formulaoneBlink():
      
 def blinkFormulaoneLamps():
     global formulaone_lamps_state
-    print("START blinkFormulaoneLamps")
     
+    #lampeggio per 15 volte, evidenzia il completamento di FORMULAONE
     for _ in range(15):
         if formulaone_lamps_state[0]==0:
             wiringpi.digitalWrite(127, 1)    
@@ -451,9 +453,47 @@ def blinkFormulaoneLamps():
         
     # torna al blink
     Thread(target=formulaoneBlink).start()
+        
+
+def blinkExtraBallSx():
+    global fastlap
+    global turbo
+    global shutdown
     
-    print("END blinkFormulaoneLamps")
+    #mentre hai il turbo, non hai fatto il fastlap, sei in partita e non stai spegnendo il raspberry
+    while turbo>0 and fastlap and attract.getAttractFlag() == False and shutdown < 200:
+        wiringpi.digitalWrite(131, 1) #luce extraball
+        wiringpi.digitalWrite(116, 1) #luce fastlap
+        wiringpi.digitalWrite(151, 1) #luce playfield score double
+        sleep(.2)
+        wiringpi.digitalWrite(131, 0) #luce extraball
+        wiringpi.digitalWrite(116, 0) #luce fastlap
+        wiringpi.digitalWrite(151, 0) #luce playfield score double
+        sleep(.2)
+        
+
+def blinkExtraBallRamp():
+    global extraBallRamp
+    global shutdown
     
+    #mentre extraBallRamp e' attivo, sei in partita e non stai spegnendo il raspberry
+    while extraBallRamp == True and attract.getAttractFlag() == False and shutdown < 200:
+        wiringpi.digitalWrite(139, 1) #luce extraball
+        sleep(.2)
+        wiringpi.digitalWrite(139, 0) #luce extraball
+        sleep(.2)
+        
+        
+def blinkDoubleScore():
+    global doubleScore
+    global shutdown
+    
+    #mentre doublescore e' attivo, sei in partita e non stai spegnendo il raspberry
+    while doubleScore == True and attract.getAttractFlag() == False and shutdown < 200:
+        wiringpi.digitalWrite(140, 1) #luce doublescore sulla rampa box
+        sleep(.2)
+        wiringpi.digitalWrite(140, 0) #luce doublescore sulla rampa box
+        sleep(.2)
     
     
 def fireLamps():
@@ -610,21 +650,13 @@ def fireLamps():
         wiringpi.digitalWrite(133, 1) #50k
         wiringpi.digitalWrite(134, 1) #100k
         
-    #3. se avevi acceso "double score", riaccendi la luce blu
-    if doubleScore == True:
-        wiringpi.digitalWrite(140, 1) #double score
-        
-    #4. se "extra ball" sulla rampa box era attiva, riaccendila
-    if extraBallRamp == True:
-        wiringpi.digitalWrite(139, 1) #luce extraball della rampa
-        
-    #5. ripristina le luci verdi del moltiplicatore, 2x, 3x ......
+    #3. ripristina le luci verdi del moltiplicatore, 2x, 3x ......
     restoreX()
     
-    #6. ripristina le S lamps dei giri veloci
+    #4. ripristina le S lamps dei giri veloci
     Thread(target=sLamps).start()
     
-    #7. ripristina 100k, 200k 300k
+    #5. ripristina 100k, 200k 300k
     if center_target_state[0]==1:
         wiringpi.digitalWrite(135, 1) #100k
     if center_target_state[1]==1:
@@ -637,10 +669,9 @@ def fireLamps():
     
 
 def scoreCalculation(s):
-    global doubleScore
+    global playFieldScoreDouble
     global score
     global x
-    global window
         
     if playFieldScoreDouble == False:
         score = score+(x*s)
@@ -655,15 +686,46 @@ def resetFormulaone():
         formulaone_lamps_state[i] = 0 #resetta
     
     resetformulaonelamps = True
+    
+
+def activeMultiball():
+    #mentre la palla e' in posizione 1 e l'altra non in posizione 2...
+    while wiringpi.digitalRead(65+0) and not wiringpi.digitalRead(65+31) and attract.getAttractFlag() == False:
+        Thread(target=activeCoilBallRelease).start()
+        sleep(1)
         
+    #mentre la palla non sta sulla rampa di lancio, aspetta
+    while not wiringpi.digitalRead(65+1):
+        pass
+        
+    Thread(target=activeCoilFire).start() #ora lanciala
+    
+    Thread(target=blinkShootAgainInMultiball).start() #attiva shoot again
+        
+
+def autoFire():
+    global aFire
+    aFire = True
+    
+    #1. aspetta che la palla sia in posizione 1
+    while not wiringpi.digitalRead(65+0):
+        pass
+            
+    #2. mentre c'e' una palla in posizione 1 che non sta ancora sulla rampa di lancio
+    while wiringpi.digitalRead(65+0) and not wiringpi.digitalRead(65+1) and attract.getAttractFlag() == False:
+        Thread(target=activeCoilBallRelease).start()
+        sleep(1)
+                
+    Thread(target=activeCoilFire).start() #3. quindi lanciala
+    
+    aFire = False
+    
         
 def checkFormulaone():
     global path
     global box
     global tyres
-    
-    print("START checkFormulaone")
-            
+                
     if formulaoneCompleted():
         resetFormulaone()
         
@@ -676,29 +738,13 @@ def checkFormulaone():
         
         filename=path / 'audio/formulaonecompleted.mp3'
         Thread(target=audio, args=(filename,)).start()
-            
-        #multiball
-        if wiringpi.digitalRead(65+0): #se è presente la seconda palla in buca  
-            t=1.0
-            while not wiringpi.digitalRead(65+1) and attract.getAttractFlag() == False: #mentre la palla non sta sulla rampa di lancio
-                sleep(.5)
-                t=t+0.5
-                if t >= 1.0 and not wiringpi.digitalRead(65+1): #ogni secondo riprova a mettere fuori la palla se l'operazione non va a buon fine
-                    Thread(target=activeCoilBallRelease).start()
-                    t=0.0
-                
-            Thread(target=activeCoilFire).start() #quindi lanciala
-            
-            #accensione luci playfield
-            Thread(target=fireLamps).start()
+        
+        activeMultiball()
     
     Thread(target=updateFormulaoneLamps).start()
     
-    print("END checkFormulaone")
-
 
 def restoreX():
-    print("START restoreX")
     global x
     
     if x==1:
@@ -773,11 +819,8 @@ def restoreX():
         wiringpi.digitalWrite(113, 1)
         wiringpi.digitalWrite(114, 1)
 
-    print("END restoreX")
-
 
 def incrementX(w):
-    print("START incrementX")
     global x
     
     x=x+w #incrementa a prescindere
@@ -787,11 +830,8 @@ def incrementX(w):
     
     restoreX() #aggiorna le luci
 
-    print("END incrementX")
-
 
 def confirmKGreenValue():
-    print("START confirmKGreenValue")
     global checkK250
     global k_lamps_state_green
     global shutdown
@@ -807,11 +847,8 @@ def confirmKGreenValue():
             wiringpi.digitalWrite(138, 0)
             sleep(.2)
             
-    print("END confirmKGreenValue")           
-
 
 def kGreenBlink():
-    print("START kGreenBlink")
     global k_lamps_state_green
     global shutdown
     
@@ -843,15 +880,10 @@ def kGreenBlink():
             wiringpi.digitalWrite(132, 1) #25k
             wiringpi.digitalWrite(133, 1) #50k
             wiringpi.digitalWrite(134, 1) #100k
-            incrementX(1)
             break
-    
-    print("END kGreenBlink")
-               
+                   
             
 def confirmKOrangeValue():
-    print("START confirmKOrangeValue")
-
     global ballsXGame
     global checkKGreen
     global extraBallRamp
@@ -920,13 +952,11 @@ def confirmKOrangeValue():
     if kOrangeCompleted() and checkKGreen == False:
         checkKGreen=True
         Thread(target=kGreenBlink).start()
-        wiringpi.digitalWrite(139, 1) #luce extraball della rampa
         extraBallRamp = True
-    print("END confirmKOrangeValue")
+        Thread(target=blinkExtraBallRamp).start()
 
 
 def K250():
-    print("START K250")
     global checkKGreen
     global checkK250
     global k_lamps_state_orange
@@ -953,15 +983,12 @@ def K250():
     incrementX(1)
     
     #attiva la luce del double score sulla rampa
-    wiringpi.digitalWrite(140, 1) #double score
     doubleScore = True
-
-    print("END K250")
+    Thread(target=blinkDoubleScore).start() #riparti da capo con i blink
     
 
 def kOrangeBlink():
     global shutdown
-    print("START kOrangeBlink")
     
     while attract.getAttractFlag() == False and not kOrangeCompleted() and shutdown < 200:
         if k_lamps_state_orange[0]==0:
@@ -1123,19 +1150,15 @@ def kOrangeBlink():
         
         incrementX(1)
     
-    print("END kOrangeBlink")
-
 
 def formulaoneLetterObtained():
-    print("START formulaoneLetterObtained")
-
     for i in range(10):
         if formulaone_lamps_state[i]==0: #accende la prima lettera di FORMULAONE ancora non ottenuta ed esce 
             formulaone_lamps_state[i]=1
-            Thread(target=checkFormulaone).start() #controlla se FORMULAONE e' stato completato
             break
-    print("END formulaoneLetterObtained")
     
+    Thread(target=checkFormulaone).start() #controlla se FORMULAONE e' stato completato
+
     
 def formulaoneCompleted(): #ritorna vero se FORMULAONE e' tutto acceso
     flag=True
@@ -1148,7 +1171,6 @@ def formulaoneCompleted(): #ritorna vero se FORMULAONE e' tutto acceso
     
 
 def sLamps():
-    print("START sLamps")
     global fastLapsCounter
     
     if fastLapsCounter == 1:
@@ -1160,12 +1182,9 @@ def sLamps():
         wiringpi.digitalWrite(97, 0)
         wiringpi.digitalWrite(98, 0)
         wiringpi.digitalWrite(123, 0) #luce increase ramp
-
-    print("END sLamps")
     
 
 def kOrangeScores():
-    print("START kOrangeScores")
     trovatoK = False #cerca lo 0
     
     for i in range(14): #ricerca dello 0
@@ -1198,12 +1217,8 @@ def kOrangeScores():
             k_lamps_state_orange[k]=-1
             k_lamps_state_orange[z]=0
     
-    print(k_lamps_state_orange)
-    print("END kOrangeScores")
-
 
 def resetXLamps():
-    print("START resetXLamps")
     wiringpi.digitalWrite(115, 0)
     sleep(.1)
     wiringpi.digitalWrite(114, 0)
@@ -1219,13 +1234,11 @@ def resetXLamps():
     wiringpi.digitalWrite(109, 0)
     sleep(.1)
     wiringpi.digitalWrite(108, 0)
-    print("END resetXLamps")
     
     return 1
 
 
 def audio(filename):
-    print("START audio")
     global select_media_player
     media = vlc.Media(filename)
     
@@ -1240,11 +1253,8 @@ def audio(filename):
         mediaPlayer1.play()
         select_media_player = True
     
-    print("END audio")
-
     
 def flashingValueFunction():
-    print("START flashingValueFunction")
     global flashingValueFlag
     global flashingValue
     global shutdown
@@ -1270,13 +1280,9 @@ def flashingValueFunction():
         
     flashingValueFlag = False
     flashingValue=0
-    
-    print("END flashingValueFunction")
-    
+        
 
-def flashingValuesConfirm(lamp):
-    print("START flashingValuesConfirm")
-    
+def flashingValuesConfirm(lamp):    
     if lamp == 0:
         Thread(target=blinkFlashingValueRear).start()
         sleep(.1)
@@ -1305,12 +1311,9 @@ def flashingValuesConfirm(lamp):
     wiringpi.digitalWrite(135, 0)
     wiringpi.digitalWrite(136, 0)
     wiringpi.digitalWrite(137, 0)
-    
-    print("END flashingValuesConfirm")
-    
+        
 
 def updateFormulaoneLamps():
-    print("START updateFormulaoneLamps")
     sleep(.1)
     if formulaone_lamps_state[0] == 1:
         wiringpi.digitalWrite(127, 1)
@@ -1361,30 +1364,23 @@ def updateFormulaoneLamps():
         wiringpi.digitalWrite(147, 1)
     else:
         wiringpi.digitalWrite(147, 0)
-
-    print("END updateFormulaoneLamps")
     
 
 def flashingValueRear(): #le 2 luci bianche dove sta il bonus 100 200 300 vengono accese e spente una sola volta
-    print("START flashingValueRear")
     wiringpi.digitalWrite(141, 1)
     sleep(.1)
     wiringpi.digitalWrite(141, 0)
-    print("END flashingValueRear")
 
 
 def blinkFlashingValueRear(): #le 2 luci bianche dove sta il bonus 100 200 300 vengono accese e spente 20 volte
-    print("START blinkFlashingValueRear")
     for _ in range(20):
         wiringpi.digitalWrite(141, 1)
         sleep(.1)
         wiringpi.digitalWrite(141, 0)
         sleep(.1)
-    print("END blinkFlashingValueRear")
 
 
 def flashingEnterInRamp():
-    print("START flashingEnterInRamp")
     global box
     global x
     global secondix
@@ -1407,11 +1403,9 @@ def flashingEnterInRamp():
                 restoreX()
         
     wiringpi.digitalWrite(124, 0)
-    print("END flashingEnterInRamp")
     
 
 def flashingRearLamps():
-    print("START flashingRearLamps")
     global box
     global shutdown
     
@@ -1438,19 +1432,15 @@ def flashingRearLamps():
         wiringpi.digitalWrite(155, 1)
         sleep(.1)
         wiringpi.digitalWrite(155, 0)
-    print("END flashingRearLamps")
     
         
 def flashingBumper(lamp):
-    print("START flashingBumper")
     wiringpi.digitalWrite(lamp, 1)
     sleep(.1)
     wiringpi.digitalWrite(lamp, 0)
-    print("END flashingBumper")
 
 
 def popBumperLamps():
-    print("START popBumperLamps")
     global fastlap
     
     sleep(.5)
@@ -1464,7 +1454,6 @@ def popBumperLamps():
     wiringpi.digitalWrite(148, 0)
     wiringpi.digitalWrite(149, 0)
     wiringpi.digitalWrite(150, 0)
-    print("END popBumperLamps")
         
     
 def kOrangeCompleted():
@@ -1513,7 +1502,6 @@ def semafori():
 
 
 def blinkShootAgain():
-    print("START blinkShootAgain")
     global shootAgain
     global afterShootAgain
     global shutdown
@@ -1523,10 +1511,7 @@ def blinkShootAgain():
         
         i=0
         while i<60 and shootAgain == True and attract.getAttractFlag() == False and shutdown < 200:
-            #con questo if accendo la luce una sola volta senza che ad ogni ciclo riaccendo una luce gia' accesa
-            if i==0:
-                wiringpi.digitalWrite(99, 1)
-                
+            wiringpi.digitalWrite(99, 1) 
             sleep(.1)
             i+=1
         
@@ -1540,7 +1525,31 @@ def blinkShootAgain():
         
         wiringpi.digitalWrite(99, 0)
         shootAgain = False
-    print("END blinkShootAgain")
+        
+        
+def blinkShootAgainInMultiball():
+    global shootAgain
+    global afterShootAgain
+    global shutdown
+    
+    shootAgain = True
+        
+    i=0
+    while i<60 and shootAgain == True and attract.getAttractFlag() == False and shutdown < 200:
+        wiringpi.digitalWrite(99, 1) 
+        sleep(.1)
+        i+=1
+        
+    i=0
+    while i<10 and shootAgain == True and attract.getAttractFlag() == False and shutdown < 200:
+        wiringpi.digitalWrite(99, 1)
+        sleep(.1)
+        wiringpi.digitalWrite(99, 0)
+        sleep(.1)
+        i+=1
+        
+    wiringpi.digitalWrite(99, 0)
+    shootAgain = False
         
         
 def backgroundMusic():
@@ -1740,59 +1749,6 @@ def obtainE():
     switch_state[17] = 0
     
 
-def ballLostDX():
-    global balls
-    global shootAgain
-    global afterShootAgain
-    global fastLapsCounter
-    global switch_state
-    global path
-    global pallaPersaDaDX
-    
-    scoreCalculation(1010)
-    pallaPersaDaDX = True
-        
-    if afterShootAgain: #se hai già usufruito della 2nd canche non hai una terza chance, palla definitivamente persa.
-        shootAgain = False
-        afterShootAgain = False
-        
-        if balls % 4 == 1:
-            filename=path / 'audio/out2.mp3'
-        elif balls % 4 == 2:
-            filename=path / 'audio/noo2.mp3'
-        elif balls % 4 == 3:
-            filename=path / 'audio/out1.mp3' 
-        else:
-            filename=path / 'audio/noo.mp3'
-        Thread(target=audio, args=(filename,)).start()
-        
-    elif shootAgain == True: #se non è una 2nd canche allora controlla se sei ancora nella finestra dello shootAgain
-        shootAgain = False
-        afterShootAgain = True
-        
-        balls-=1 #2nd chance
-        filename=path / 'audio/keepcalm.mp3'
-        Thread(target=audio, args=(filename,)).start()
-        
-    else:
-        if balls % 4 == 1:
-            filename=path / 'audio/out2.mp3'
-        elif balls % 4 == 2:
-            filename=path / 'audio/noo2.mp3'
-        elif balls % 4 == 3:
-            filename=path / 'audio/out1.mp3' 
-        else:
-            filename=path / 'audio/noo.mp3'
-        Thread(target=audio, args=(filename,)).start()
-    
-        
-    fastLapsCounter = 0
-    Thread(target=sLamps).start()
-    
-    sleep(.5)
-    switch_state[5] = 0
-    
-
 def ballDX():
     global tyres
     global switch_state
@@ -1839,6 +1795,63 @@ def ballSX():
     sleep(.8)
     switch_state[20] = 0
     
+    
+def ballLostDX():
+    global balls
+    global shootAgain
+    global afterShootAgain
+    global fastLapsCounter
+    global switch_state
+    global path
+    global pallaPersaDaDX
+    
+    scoreCalculation(1010)
+    pallaPersaDaDX = True
+        
+    if afterShootAgain: #se hai già usufruito della 2nd chance non hai una terza chance, palla definitivamente persa.
+        shootAgain = False
+        afterShootAgain = False
+        
+        if balls % 4 == 1:
+            filename=path / 'audio/out2.mp3'
+        elif balls % 4 == 2:
+            filename=path / 'audio/noo2.mp3'
+        elif balls % 4 == 3:
+            filename=path / 'audio/out1.mp3' 
+        else:
+            filename=path / 'audio/noo.mp3'
+        Thread(target=audio, args=(filename,)).start()
+                
+    elif shootAgain == True: #se è una 2nd chance allora controlla se sei ancora nella finestra dello shootAgain
+        shootAgain = False
+        afterShootAgain = True
+        
+        filename=path / 'audio/keepcalm.mp3'
+        Thread(target=audio, args=(filename,)).start()
+        
+        Thread(target=autoFire).start()
+        
+    else: #sei fuori dalla finestra della 2nd chance
+        shootAgain = False
+        afterShootAgain = False
+        
+        if balls % 4 == 1:
+            filename=path / 'audio/out2.mp3'
+        elif balls % 4 == 2:
+            filename=path / 'audio/noo2.mp3'
+        elif balls % 4 == 3:
+            filename=path / 'audio/out1.mp3' 
+        else:
+            filename=path / 'audio/noo.mp3'
+        Thread(target=audio, args=(filename,)).start()
+            
+        
+    fastLapsCounter = 0
+    Thread(target=sLamps).start()
+    
+    sleep(.5)
+    switch_state[5] = 0
+  
 
 def ballLostCenter():
     global x
@@ -1856,7 +1869,7 @@ def ballLostCenter():
     
     pallaPersaCentro = True
     
-    if wiringpi.digitalRead(65+0): #se non sono nel multiball
+    if wiringpi.digitalRead(65+0) and not wiringpi.digitalRead(65+31): #se c'e' una palla in posizione 1 non sono nel multiball
         x = resetXLamps()
         tyres=30
         
@@ -1867,9 +1880,9 @@ def ballLostCenter():
         wiringpi.digitalWrite(156, 0) #spegni luci box
         wiringpi.digitalWrite(157, 0) #spegni luci box
                      
-        if pallaPersaDaDX == False:
+        if pallaPersaDaDX == False: #se la palla non proviene dall'uscita destra
             
-            if afterShootAgain: #se hai già usufruito della 2nd canche non hai una 3 canche, palla definitivamente persa.
+            if afterShootAgain: #se hai già usufruito della 2nd chance palla definitivamente persa.
                 shootAgain = False
                 afterShootAgain = False
                 
@@ -1882,16 +1895,20 @@ def ballLostCenter():
                 else:
                     filename=path / 'audio/noo.mp3'
                 Thread(target=audio, args=(filename,)).start()
-                
-            elif shootAgain == True: #se non è una 2nd canche allora controlla se sei ancora nella finestra dello shootAgain
+                                
+            elif shootAgain == True: #se è una 2nd chance allora controlla se sei ancora nella finestra dello shootAgain
                 shootAgain = False
                 afterShootAgain = True
                 
-                balls-=1 #2nd chance
                 filename=path / 'audio/keepcalm.mp3'
                 Thread(target=audio, args=(filename,)).start()
                 
-            else:
+                Thread(target=autoFire).start()
+                
+            else: #sei fuori dalla finestra della 2nd chance
+                shootAgain = False
+                afterShootAgain = False
+        
                 if balls % 4 == 1:
                     filename=path / 'audio/out2.mp3'
                 elif balls % 4 == 2:
@@ -1901,12 +1918,59 @@ def ballLostCenter():
                 else:
                     filename=path / 'audio/noo.mp3'
                 Thread(target=audio, args=(filename,)).start()
+                                
         else:
             pallaPersaDaDX = False
             
-
-    #se sono o non sono nel multiball, recupera la palla persa
-    Thread(target=activeCoilOutHoleKicker).start()
+        #recupera la palla persa
+        Thread(target=activeCoilOutHoleKicker).start()
+        
+    elif not wiringpi.digitalRead(65+0) and not wiringpi.digitalRead(65+31): #sono nel multiball
+        
+        #recupera la palla persa
+        Thread(target=activeCoilOutHoleKicker).start()
+        
+        #aspetta che la palla sia in posizione 1
+        while not wiringpi.digitalRead(65+0):
+            pass
+                    
+        if afterShootAgain: #se hai già usufruito della 2nd chance palla definitivamente persa.
+            shootAgain = False
+            afterShootAgain = False
+            
+            if balls % 4 == 1:
+                filename=path / 'audio/out2.mp3'
+            elif balls % 4 == 2:
+                filename=path / 'audio/noo2.mp3'
+            elif balls % 4 == 3:
+                filename=path / 'audio/out1.mp3' 
+            else:
+                filename=path / 'audio/noo.mp3'
+            Thread(target=audio, args=(filename,)).start()
+                            
+        elif shootAgain == True: #se è una 2nd chance allora controlla se sei ancora nella finestra dello shootAgain
+            shootAgain = False
+            afterShootAgain = True
+            
+            filename=path / 'audio/keepcalm.mp3'
+            Thread(target=audio, args=(filename,)).start()
+            
+            Thread(target=autoFire).start()
+            
+        else: #sei fuori dalla finestra della 2nd chance
+            shootAgain = False
+            afterShootAgain = False
+    
+            if balls % 4 == 1:
+                filename=path / 'audio/out2.mp3'
+            elif balls % 4 == 2:
+                filename=path / 'audio/noo2.mp3'
+            elif balls % 4 == 3:
+                filename=path / 'audio/out1.mp3' 
+            else:
+                filename=path / 'audio/noo.mp3'
+            Thread(target=audio, args=(filename,)).start()
+                        
     
     shutdown=0
     sleep(1)
@@ -2087,6 +2151,9 @@ def check_center_target_complete():
         # ottieni il K_Value selezionato dalle bandierine rotanti
         Thread(target=confirmKOrangeValue).start()
         
+        #ottieni una lettera di FormulaOne
+        Thread(target=formulaoneLetterObtained).start()
+        
         #reset stato luci centrali
         center_target_state[0]=0
         center_target_state[1]=0
@@ -2199,6 +2266,9 @@ def boxRamp():
     
     # ottieni il K_Value selezionato
     Thread(target=confirmKOrangeValue).start()
+    # ottieni una lettera di formulaone
+    Thread(target=formulaoneLetterObtained).start()
+    
     
     if box==True:
         filename=path / 'audio/box2.mp3'
@@ -2222,12 +2292,10 @@ def boxRamp():
     if extraBallRamp == True:
         extraBallRamp = False
         ballsXGame+=1
-        wiringpi.digitalWrite(139, 0) #luce extraball della rampa
         
     if doubleScore == True:
         doubleScore = False
         score = score*2
-        wiringpi.digitalWrite(140, 0) #spegni la luce double score
         incrementX(1)
         
         filename=path / 'audio/maidetto.mp3'
@@ -2247,7 +2315,7 @@ def boxRamp():
         Thread(target=audio, args=(filename,)).start()
         
         
-    sleep(.3)
+    sleep(1)
     switch_state[29] = 0
     
 
@@ -2271,9 +2339,6 @@ def obtainFastLap():
         turbo=0
         sleep(.3)
         GPIO.output(40,0) #ritrai la bandierina del fastlap
-        wiringpi.digitalWrite(116, 0) #luce fastlap
-        wiringpi.digitalWrite(f131, 0) #luce extraball
-        wiringpi.digitalWrite(151, 0) #luce playfield score double
         playFieldScoreDouble = False
         ballsXGame+=1
         incrementX(1)
@@ -2365,6 +2430,226 @@ def writeHighScore():
     fo.write(str(score))
     fo.close()
     
+
+def updateScreenGraphic():
+    global messaggio
+    global afterShootAgain
+    global stato_semafori
+    global timeTextInGame
+    global score
+    global fastlap
+    global box
+    global hscorediv
+    global pos
+    global posPrec
+    global tyres
+    global turbo
+    
+    #------------------------------UPDATE SCREEN GRAPHIC----------------------------
+    if not afterShootAgain:
+        if stato_semafori == 0:
+            grafica.sem1()
+        if stato_semafori == 1:
+            grafica.sem2()
+        if stato_semafori == 2:
+            grafica.sem3()
+        if stato_semafori == 3:
+            grafica.sem4()
+        if stato_semafori == 4:
+            grafica.sem5()
+        if stato_semafori == -1:
+            grafica.spegni_sem()
+    else:
+        grafica.spegni_sem()
+        
+        
+    if len(messaggio) > 0:
+        timeTextInGame+=1
+        if timeTextInGame >= 200:
+            timeTextInGame = 0
+            messaggio=""
+    
+    
+    if score==0:
+        grafica.setInfoScore(messaggio, "00")
+    else:
+        grafica.setInfoScore(messaggio, format(score, ","))
+        
+    if fastlap:
+        grafica.setInfoScore("FAST LAP: " + str(int(now+15.5 - time.time())) + "sec", format(score, ","))
+    elif box:
+        grafica.setInfoScore("BOX! BOX! " + str(int(20-secondix)) + "sec", format(score, ","))
+    
+        
+    grafica.setBall("Ball: " + str(balls) + " of " + str(ballsXGame) + " ")
+    grafica.setX("Multiplier: " + str(x) + "x ")
+    
+    if score <= hscorediv:
+        pos = 20
+        value = (hscorediv - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv and score <=hscorediv*2:
+        pos = 19
+        value = (hscorediv*2 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*2 and score <=hscorediv*3:
+        pos = 18
+        value = (hscorediv*3 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*3 and score <=hscorediv*4:
+        pos = 17
+        value = (hscorediv*4 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*4 and score <=hscorediv*5:
+        pos = 16
+        value = (hscorediv*5 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*5 and score <=hscorediv*6: 
+        pos = 15
+        value = (hscorediv*6 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*6 and score <=hscorediv*7:
+        pos = 14
+        value = (hscorediv*7 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*7 and score <=hscorediv*8:
+        pos = 13
+        value = (hscorediv*8 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*8 and score <=hscorediv*9:
+        pos = 12
+        value = (hscorediv*9 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*9 and score <=hscorediv*10:
+        pos = 11
+        value = (hscorediv*10 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*10 and score <=hscorediv*11:
+        pos = 10
+        value = (hscorediv*11 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*11 and score <=hscorediv*12:
+        pos = 9
+        value = (hscorediv*12 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*12 and score <=hscorediv*13:
+        pos = 8
+        value = (hscorediv*13 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*13 and score <=hscorediv*14:
+        pos = 7
+        value = (hscorediv*14 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*14 and score <=hscorediv*15:
+        pos = 6
+        value = (hscorediv*15 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*15 and score <=hscorediv*16:
+        pos = 5
+        value = (hscorediv*16 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*16 and score <=hscorediv*17:
+        pos = 4
+        value = (hscorediv*17 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*17 and score <=hscorediv*18:
+        pos = 3
+        value = (hscorediv*18 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > hscorediv*18 and score <=hscorediv*19:
+        pos = 2
+        value = (hscorediv*19 - score) * 3 / hscorediv # 3 = 3secs of gap each time
+    elif score > int(hscore):
+        pos = 1
+        
+    if pos != 1:
+        grafica.setPosition(" Pos: " + str(pos) + ", %.2f" % value + " sec")
+    else:
+        grafica.setPosition(" Pos: 1")
+    
+    #il telecronista parla in base alle posizioni
+    if posPrec - pos > 1:
+        posPrec = pos+1
+        
+        if pos == 1:
+            filename=path / 'audio/vince.mp3'  
+        elif pos == 2:
+            filename=path / 'audio/bottas2nd.mp3'
+        elif pos == 3:
+            filename=path / 'audio/hamloose.mp3'
+        elif pos == 4:
+            filename=path / 'audio/highscore1.mp3'
+        elif pos == 5:
+            filename=path / 'audio/fantastica.mp3'
+        elif pos == 6:
+            filename=path / 'audio/scalando1.mp3'
+        elif pos == 7:
+            filename=path / 'audio/comeon.mp3'
+        elif pos == 8:
+            filename=path / 'audio/highscore3.mp3'
+        elif pos == 9:
+            filename=path / 'audio/highscore4.mp3'
+        elif pos == 10:
+            filename=path / 'audio/incredibile.mp3'
+        elif pos == 11:
+            filename=path / 'audio/maidetto.mp3'
+        elif pos == 12:
+            filename=path / 'audio/piove.mp3'
+        elif pos == 13:
+            filename=path / 'audio/thanks.mp3'
+        elif pos == 13:
+            filename=path / 'audio/traiettoria.mp3'
+            
+        if pos >=1 and pos < 14:
+            Thread(target=audio, args=(filename,)).start()
+    #il telecronista parla in base alle posizioni
+            
+    
+    if tyres > 0:
+        grafica.setTyresTurbo(" Tyres: " + str(int(tyres/30*100)) + "%, Turbo: " + str(int(turbo/10*100)) + "%")
+    else:
+        grafica.setTyresTurbo(" Tyres: 0%, Turbo: " + str(int(turbo/10*100)) + "%")
+        
+    window.update_idletasks()
+    window.update()
+    #------------------------------UPDATE SCREEN GRAPHIC----------------------------
+    
+
+def attractScreenGraphic():
+    global timeTextAttractMode
+    global score
+    
+    #------------------SCRITTA IN ATTRACT MODE ----------
+    timeTextAttractMode+=1 #tempo scritta in attract mode
+    
+    if timeTextAttractMode >=0 and timeTextAttractMode < 300:
+        grafica.setInfoScore("CHARLES LECLERC", "GRAND PRIX")
+    elif timeTextAttractMode >=300 and timeTextAttractMode < 600:
+        grafica.setInfoScore("WINNERS DON'T USE DRUGS", "PRESS START")
+    elif timeTextAttractMode >=600 and timeTextAttractMode < 900:
+        grafica.setInfoScore("HIGH SCORE", format(int(hscore), ","))
+    elif timeTextAttractMode >=900 and timeTextAttractMode < 1200:
+        if score==0:
+            timeTextAttractMode = 1200
+        else:
+            grafica.setInfoScore("LAST SCORE GAME", format(int(score), ","))
+                    
+    if timeTextAttractMode == 1200:
+        timeTextAttractMode = 0
+        
+    window.update_idletasks()
+    window.update()
+    #------------------SCRITTA IN ATTRACT MODE ----------
+    
+    
+def shutdownSystem():
+    global shutdown
+    
+    shutdown+=1      
+    if shutdown==200:
+        sleep(5) #aspetta che tutti i thread muoiono
+        
+        #recupero palla in buca
+        #1. mentre le due biglie non sono a riposo simultaneamente
+        while not wiringpi.digitalRead(65+31):
+            #2. mentre la biglia sta in buca di perdita
+            while wiringpi.digitalRead(65+3):
+                Thread(target=activeCoilOutHoleKicker).start() #3. recuperala
+                sleep(1)
+
+        #spegni tutto
+        for i in range(64):
+            wiringpi.digitalWrite(97+i, 0)
+            
+        #Spegni General Illumination
+        GPIO.output(16, 1)
+        
+        sleep(1)
+                            
+        #spegni raspberry
+        call("sudo shutdown -h now", shell=True) #spegni raspberry
     
 
 if __name__ == "__main__":
@@ -2377,95 +2662,64 @@ if __name__ == "__main__":
     
     while True:
         
-        #------------------SCRITTA IN ATTRACT MODE ----------
-        timeTextAttractMode+=1 #tempo scritta in attract mode
-        
-        if timeTextAttractMode >=0 and timeTextAttractMode < 300:
-            grafica.setInfoScore("CHARLES LECLERC", "GRAND PRIX")
-        elif timeTextAttractMode >=300 and timeTextAttractMode < 600:
-            grafica.setInfoScore("WINNERS DON'T USE DRUGS", "PRESS START")
-        elif timeTextAttractMode >=600 and timeTextAttractMode < 900:
-            grafica.setInfoScore("HIGH SCORE", format(int(hscore), ","))
-        elif timeTextAttractMode >=900 and timeTextAttractMode < 1200:
-            if score==0:
-                timeTextAttractMode = 1200
-            else:
-                grafica.setInfoScore("LAST SCORE GAME", format(int(score), ","))
-                        
-        if timeTextAttractMode == 1200:
-            timeTextAttractMode = 0
+        attractScreenGraphic()
             
-        window.update_idletasks()
-        window.update()
-        #------------------SCRITTA IN ATTRACT MODE ----------
-            
-    
+        #se sei in partita...
         while balls<=ballsXGame and balls!=-1 and balls!=100:
             
             #--------CHECK SWITCHES
             # F di formulaone
             if wiringpi.digitalRead(65+7) and switch_state[7]==0:
-                print('Switch activated: ', 7)
                 switch_state[7] = 1
                 Thread(target=obtainF).start()
                 
             # O di formulaone
             if wiringpi.digitalRead(65+8) and switch_state[8]==0:
-                print('Switch activated: ', 8)
                 switch_state[8] = 1
                 Thread(target=obtainO).start()
                 
             # R di formulaone
             if wiringpi.digitalRead(65+9) and switch_state[9]==0:
-                print('Switch activated: ', 9)
                 switch_state[9] = 1
                 Thread(target=obtainR).start()
                 
             # M di formulaone
             if wiringpi.digitalRead(65+10) and switch_state[10]==0:
-                print('Switch activated: ', 10)
                 switch_state[10] = 1
                 Thread(target=obtainM).start()
                 
             # U di formulaone
             if wiringpi.digitalRead(65+11) and switch_state[11]==0:
-                print('Switch activated: ', 11)
                 switch_state[11] = 1
                 Thread(target=obtainU).start()
                 
             # L di formulaone
             if wiringpi.digitalRead(65+12) and switch_state[12]==0:
-                print('Switch activated: ', 12)
                 switch_state[12] = 1
                 Thread(target=obtainL).start()
                 
             # A di formulaone
             if wiringpi.digitalRead(65+13) and switch_state[13]==0:
-                print('Switch activated: ', 13)
                 switch_state[13] = 1
                 Thread(target=obtainA).start()
                 
             # OO seconda O di formulaone
             if wiringpi.digitalRead(65+15) and switch_state[15]==0:
-                print('Switch activated: ', 15)
                 switch_state[15] = 1
                 Thread(target=obtainOO).start()
                 
             # N di formulaone
             if wiringpi.digitalRead(65+16) and switch_state[16]==0:
-                print('Switch activated: ', 16)
                 switch_state[16] = 1
                 Thread(target=obtainN).start()
                 
             # E di formulaone
             if wiringpi.digitalRead(65+17) and switch_state[17]==0:
-                print('Switch activated: ', 17)
                 switch_state[17] = 1
                 Thread(target=obtainE).start()
                 
             # Palla persa lato destro
             if wiringpi.digitalRead(65+5) and switch_state[5]==0:
-                print('Switch activated: ', 5)
                 switch_state[5] = 1
                 
                 if shootAgain:
@@ -2478,19 +2732,16 @@ if __name__ == "__main__":
                 
             # Palla lato destro
             if wiringpi.digitalRead(65+6) and switch_state[6]==0:
-                print('Switch activated: ', 6)
                 switch_state[6] = 1
                 Thread(target=ballDX).start()
                 
             # Palla lato sinistro
             if wiringpi.digitalRead(65+20) and switch_state[20]==0:
-                print('Switch activated: ', 20)
                 switch_state[20] = 1
                 Thread(target=ballSX).start()
                 
             # Palla persa al centro
             if wiringpi.digitalRead(65+3) and switch_state[3]==0:
-                print('Switch activated: ', 3)
                 switch_state[3] = 1
                 Thread(target=ballLostCenter).start()
                 
@@ -2501,191 +2752,158 @@ if __name__ == "__main__":
                 
             # Popbumper center
             if wiringpi.digitalRead(65+26) and switch_state[26]==0:
-                print('Switch activated: ', 26)
                 switch_state[26] = 1
                 Thread(target=popbumperCenter).start()
                 
             # Popbumper left
             if wiringpi.digitalRead(65+25) and switch_state[25]==0:
-                print('Switch activated: ', 25)
                 switch_state[25] = 1
                 Thread(target=popbumperLeft).start()
                 
             # Popbumper right
             if wiringpi.digitalRead(65+24) and switch_state[24]==0:
-                print('Switch activated: ', 24)
                 switch_state[24] = 1
                 Thread(target=popbumperRight).start()
                 
             # Saucer
             if wiringpi.digitalRead(65+2) and switch_state[2]==0:
-                print('Switch activated: ', 2)
                 switch_state[2] = 1
                 Thread(target=saucer).start()
                 
             # Sling Left
             if wiringpi.digitalRead(65+22) and switch_state[22]==0:
-                print('Switch activated: ', 22)
                 switch_state[22] = 1
                 Thread(target=slingLeft).start()
                 
             # Sling Right
             if wiringpi.digitalRead(65+23) and switch_state[23]==0:
-                print('Switch activated: ', 23)
                 switch_state[23] = 1
                 Thread(target=slingRight).start()
             
             # Flashing Value Left
             if wiringpi.digitalRead(65+21) and switch_state[21]==0:
-                print('Switch activated: ', 21)
                 switch_state[21] = 1
                 Thread(target=obtain100K).start()
                 
             # Flashing Value Center
             if wiringpi.digitalRead(65+28) and switch_state[28]==0:
-                print('Switch activated: ', 28)
                 switch_state[28] = 1
                 Thread(target=obtain200K_or_flashingValue).start()
                 
             # Flashing Value Right
             if wiringpi.digitalRead(65+18) and switch_state[18]==0:
-                print('Switch activated: ', 18)
                 switch_state[18] = 1
                 Thread(target=obtain300K).start()
                 
             # Box Ramp
             if wiringpi.digitalRead(65+29) and switch_state[29]==0:
-                print('Switch activated: ', 29)
                 switch_state[29] = 1
                 Thread(target=boxRamp).start()
                 
             # Fast Lap
             if wiringpi.digitalRead(65+14) and switch_state[14]==0:
-                print('Switch activated: ', 14)
                 switch_state[14] = 1
                 Thread(target=obtainFastLap).start()
                 
             # Switch alto destro rampa bassa destra
             if wiringpi.digitalRead(65+27) and switch_state[27]==0:
-                print('Switch activated: ', 27)
                 switch_state[27] = 1
                 Thread(target=rampUpRight).start()
                 
             # bandiere rotanti
             if not wiringpi.digitalRead(65+19) and switch_state[19]==0:
-                print('Switch deactivated: ', 19)
                 switch_state[19] = 1
                 Thread(target=rotorFlags).start()
+
+
+            #se ci sono le 2 palle nel raccoglitore
+            if wiringpi.digitalRead(65+0) and wiringpi.digitalRead(65+31): #ball release
                 
-            #se ci sono le 2 palle nel raccoglitore e sulla rampa non c'è nulla
-            if (wiringpi.digitalRead(65+0) and wiringpi.digitalRead(65+31) and not wiringpi.digitalRead(65+1)): #ball release
-                
-                GPIO.output(40,0) #ritrai la bandierina del fastlap
-                wiringpi.digitalWrite(116, 0) #luce fastlap
-                wiringpi.digitalWrite(131, 0) #luce extraball
-                wiringpi.digitalWrite(151, 0) #luce playfield score double
-                playFieldScoreDouble = False
-                fastlap = False
-                turbo=0
-                
-                fastLapsCounter = 0
-                Thread(target=sLamps).start()
-                
-                #-----questo controllo va fatto perchè la palla persa potrebbe essere andata direttamente dentro al raccoglitore
-                if pallaPersaCentro == False:
-                    if afterShootAgain: #se hai già usufruito della 2nd canche non hai una 3 canche, palla definitivamente persa.
+                #questo pezzo di codice per la prima palla non viene eseguito
+                if balls>=1 and pallaPersaDaDX == False and pallaPersaCentro == False:
+                    if afterShootAgain: #se hai già usufruito della 2nd chance palla definitivamente persa.
                         shootAgain = False
                         afterShootAgain = False
                         
-                    elif shootAgain == True: #se non è una 2nd canche allora controlla se sei ancora nella finestra dello shootAgain
+                        if balls % 4 == 1:
+                            filename=path / 'audio/out2.mp3'
+                        elif balls % 4 == 2:
+                            filename=path / 'audio/noo2.mp3'
+                        elif balls % 4 == 3:
+                            filename=path / 'audio/out1.mp3' 
+                        else:
+                            filename=path / 'audio/noo.mp3'
+                        Thread(target=audio, args=(filename,)).start()
+                                        
+                    elif shootAgain == True: #se è una 2nd chance allora controlla se sei ancora nella finestra dello shootAgain
                         shootAgain = False
                         afterShootAgain = True
                         
-                        balls-=1 #2nd chance
                         filename=path / 'audio/keepcalm.mp3'
                         Thread(target=audio, args=(filename,)).start()
-                else:
-                    pallaPersaCentro = False
-                #-----questo controllo va fatto perchè la palla persa potrebbe essere andata direttamente dentro al raccoglitore
+                        
+                        Thread(target=autoFire).start()
+                        
+                    else: #sei fuori dalla finestra della 2nd chance
+                        shootAgain = False
+                        afterShootAgain = False
+                    
                 
+                #se vieni già da un shootagain oppure tempo dello shootagain scaduto
+                if not afterShootAgain:
+                    balls+=1
+                    pallaPersaDaDX = False
+                    pallaPersaCentro = False
+                
+                    GPIO.output(40,0) #ritrai la bandierina del fastlap
+                    playFieldScoreDouble = False
+                    fastlap = False
+                    turbo=0
+                    fastLapsCounter = 0
+                    Thread(target=sLamps).start()                    
                     
-                balls+=1
-                if balls <= ballsXGame:
-                    print("Palla in gioco numero:", balls, "/", ballsXGame)
-                                        
-                    #mentre la palla non viene a mancare nel raccoglitore (switch 31) e non sta sulla rampa
-                    t=1.0
+                if balls<=ballsXGame:
+                    #mentre la palla in posizione 2 non viene a mancare e non sta sulla rampa
                     while wiringpi.digitalRead(65+31) and not wiringpi.digitalRead(65+1):
-                        sleep(0.5) #aspetta
-                        t=t+0.5
-                        if t >= 1.0 and not wiringpi.digitalRead(65+1): #ogni secondo riprova a mettere fuori la palla se l'operazione non va a buon fine
-                            Thread(target=activeCoilBallRelease).start()
-                            t=0.0
-                    
+                        Thread(target=activeCoilBallRelease).start()
+                        sleep(.5) #aspetta
+
                     if not afterShootAgain:
                         Thread(target=semafori).start()
+                        
                     
             #ball launch
-            if wiringpi.digitalRead(65+30) and wiringpi.digitalRead(65+1): #launch ball
+            if wiringpi.digitalRead(65+30) and wiringpi.digitalRead(65+1) and aFire == False: #launch ball
                 if not afterShootAgain:
                     if partenza == 0:
                         messaggio = "BAD START"
-                        Thread(target=activeCoilFire).start()
                     elif partenza == 1:
                         messaggio = "NICE START!"
                         scoreCalculation(1000000)
                         incrementX(1)
-                        Thread(target=activeCoilFire).start()
+                        
+                        # ottieni una lettera di formulaone
+                        Thread(target=formulaoneLetterObtained).start()
+                        # ottieni una lettera di formulaone
+                        Thread(target=formulaoneLetterObtained).start()
+                        
                     elif partenza == 2:
                         messaggio = "START DELAYED"
-                        Thread(target=activeCoilFire).start()
                 else:
                     messaggio = ""
-                    Thread(target=activeCoilFire).start()
                 
-                
+                #lanciala
+                Thread(target=activeCoilFire).start()
+                #attiva shootagain
                 Thread(target=blinkShootAgain).start()
-                
-                #accensione luci playfield
+                #accensione luci effetto playfield
                 Thread(target=fireLamps).start()
+                
                 
             # SPEGNIMENTO RASPBERRY 
             #se premo il tasto FIRE a lungo allora voglio spegnere raspberry    
             if wiringpi.digitalRead(65+30):
-                shutdown+=1
-                
-                if shutdown==200:
-                    print("INIZIO PROCEDURA DI SPEGNIMENTO")
-                    print(wiringpi.digitalRead(65+31))
-                    sleep(5) #aspetta che tutti i thread muoiono
-                    
-                    #recupero palla in buca
-                    #1. mentre le due biglie non sono a riposo simultaneamente
-                    while wiringpi.digitalRead(65+31)==0:
-                        print("WAITING BALLS")
-                        #2. se la biglia sta in buca di perdita
-                        if wiringpi.digitalRead(65+3)==1:
-                            sleep(1)
-                            Thread(target=activeCoilOutHoleKicker).start() #3. recuperala
-                            sleep(1)
-                            print("BALLS OK")
-
-                    
-                    #spegni tutto
-                    for i in range(64):
-                        wiringpi.digitalWrite(97+i, 0)
-                        
-                    print("LAMPS OFF")
-
-                        
-                    #Spegni General Illumination
-                    GPIO.output(16, 1)
-                    print("GI OFF")
-                    
-                    sleep(1)
-                                        
-                    #spegni raspberry
-                    call("sudo shutdown -h now", shell=True) #spegni raspberry
+                shutdownSystem()
             # SPEGNIMENTO RASPBERRY 
                 
             
@@ -2704,10 +2922,8 @@ if __name__ == "__main__":
                 Thread(target=audio, args=(filename,)).start()
                 fastlap = True
                 GPIO.output(40, 1) #attivazione coil
-                wiringpi.digitalWrite(116, 1) #luce fastlap
-                wiringpi.digitalWrite(131, 1) #luce extraball
-                wiringpi.digitalWrite(151, 1) #luce playfield score double
                 playFieldScoreDouble = True
+                Thread(target=blinkExtraBallSx).start()
                 Thread(target=popBumperLamps).start()
                 now=time.time()
                 
@@ -2715,178 +2931,23 @@ if __name__ == "__main__":
                 if now+15.5 < time.time(): #non sono piu' nella finestra dei sec per il fastlap
                     #1.ritira la bandierina del giro veloce disabilitando il solenoide
                     GPIO.output(40, 0)
-                    wiringpi.digitalWrite(116, 0) #luce fastlap
-                    wiringpi.digitalWrite(131, 0) #luce extraball
-                    wiringpi.digitalWrite(151, 0) #luce playfield score double
                     playFieldScoreDouble = False
                     #2. disabilita fastlap
                     fastlap=False
                     #3.resetta il turbo
                     turbo=0
                     
-            #------------------------------UPDATE SCREEN GRAPHIC----------------------------
-            if not afterShootAgain:
-                if stato_semafori == 0:
-                    grafica.sem1()
-                if stato_semafori == 1:
-                    grafica.sem2()
-                if stato_semafori == 2:
-                    grafica.sem3()
-                if stato_semafori == 3:
-                    grafica.sem4()
-                if stato_semafori == 4:
-                    grafica.sem5()
-                if stato_semafori == -1:
-                    grafica.spegni_sem()
-            else:
-                grafica.spegni_sem()
-                
-                
-            if len(messaggio) > 0:
-                timeTextInGame+=1
-                if timeTextInGame >= 200:
-                    timeTextInGame = 0
-                    messaggio=""
+            updateScreenGraphic()
             
-            
-            if score==0:
-                grafica.setInfoScore(messaggio, "00")
-            else:
-                grafica.setInfoScore(messaggio, format(score, ","))
-                
-            if fastlap:
-                grafica.setInfoScore("FAST LAP: " + str(int(now+15.5 - time.time())) + "sec", format(score, ","))
-            elif box:
-                grafica.setInfoScore("BOX! BOX! " + str(int(20-secondix)) + "sec", format(score, ","))
-            
-                
-            grafica.setBall("Ball: " + str(balls) + " of " + str(ballsXGame) + " ")
-            grafica.setX("Multiplier: " + str(x) + "x ")
-            
-            if score <= hscorediv:
-                pos = 20
-                value = (hscorediv - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv and score <=hscorediv*2:
-                pos = 19
-                value = (hscorediv*2 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*2 and score <=hscorediv*3:
-                pos = 18
-                value = (hscorediv*3 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*3 and score <=hscorediv*4:
-                pos = 17
-                value = (hscorediv*4 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*4 and score <=hscorediv*5:
-                pos = 16
-                value = (hscorediv*5 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*5 and score <=hscorediv*6: 
-                pos = 15
-                value = (hscorediv*6 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*6 and score <=hscorediv*7:
-                pos = 14
-                value = (hscorediv*7 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*7 and score <=hscorediv*8:
-                pos = 13
-                value = (hscorediv*8 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*8 and score <=hscorediv*9:
-                pos = 12
-                value = (hscorediv*9 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*9 and score <=hscorediv*10:
-                pos = 11
-                value = (hscorediv*10 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*10 and score <=hscorediv*11:
-                pos = 10
-                value = (hscorediv*11 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*11 and score <=hscorediv*12:
-                pos = 9
-                value = (hscorediv*12 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*12 and score <=hscorediv*13:
-                pos = 8
-                value = (hscorediv*13 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*13 and score <=hscorediv*14:
-                pos = 7
-                value = (hscorediv*14 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*14 and score <=hscorediv*15:
-                pos = 6
-                value = (hscorediv*15 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*15 and score <=hscorediv*16:
-                pos = 5
-                value = (hscorediv*16 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*16 and score <=hscorediv*17:
-                pos = 4
-                value = (hscorediv*17 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*17 and score <=hscorediv*18:
-                pos = 3
-                value = (hscorediv*18 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > hscorediv*18 and score <=hscorediv*19:
-                pos = 2
-                value = (hscorediv*19 - score) * 3 / hscorediv # 3 = 3secs of gap each time
-            elif score > int(hscore):
-                pos = 1
-                
-            if pos != 1:
-                grafica.setPosition(" Pos: " + str(pos) + ", %.2f" % value + " sec")
-            else:
-                grafica.setPosition(" Pos: 1")
-            
-            #il telecronista parla in base alle posizioni
-            if posPrec - pos > 1:
-                posPrec = pos+1
-                
-                if pos == 1:
-                    filename=path / 'audio/vince.mp3'  
-                elif pos == 2:
-                    filename=path / 'audio/bottas2nd.mp3'
-                elif pos == 3:
-                    filename=path / 'audio/hamloose.mp3'
-                elif pos == 4:
-                    filename=path / 'audio/highscore1.mp3'
-                elif pos == 5:
-                    filename=path / 'audio/fantastica.mp3'
-                elif pos == 6:
-                    filename=path / 'audio/scalando1.mp3'
-                elif pos == 7:
-                    filename=path / 'audio/comeon.mp3'
-                elif pos == 8:
-                    filename=path / 'audio/highscore3.mp3'
-                elif pos == 9:
-                    filename=path / 'audio/highscore4.mp3'
-                elif pos == 10:
-                    filename=path / 'audio/incredibile.mp3'
-                elif pos == 11:
-                    filename=path / 'audio/maidetto.mp3'
-                elif pos == 12:
-                    filename=path / 'audio/piove.mp3'
-                elif pos == 13:
-                    filename=path / 'audio/thanks.mp3'
-                elif pos == 13:
-                    filename=path / 'audio/traiettoria.mp3'
-                    
-                if pos >=1 and pos < 14:
-                    Thread(target=audio, args=(filename,)).start()
-            #il telecronista parla in base alle posizioni
-                    
-            
-            if tyres > 0:
-                grafica.setTyresTurbo(" Tyres: " + str(int(tyres/30*100)) + "%, Turbo: " + str(int(turbo/10*100)) + "%")
-            else:
-                grafica.setTyresTurbo(" Tyres: 0%, Turbo: " + str(int(turbo/10*100)) + "%")
-                
-            window.update_idletasks()
-            window.update()
-            #------------------------------UPDATE SCREEN GRAPHIC----------------------------
         
-                
-        if balls==-1 or balls>ballsXGame and balls!=100: #fine partita
+        if ((balls==-1 or balls>ballsXGame) and balls!=100): #fine partita
             balls=100 #questo mi evita che il thread parte un milione di volte
             shutdown = 0
-            attract.flag = True
+            attract.setAttractFlag()
             Thread(target=attract.attractMode).start()
             box = False
             fastlap=False
             GPIO.output(40,0) #ritrai la bandierina del fastlap
-            wiringpi.digitalWrite(116, 0) #luce fastlap
-            wiringpi.digitalWrite(131, 0) #luce extraball
-            wiringpi.digitalWrite(151, 0) #luce playfield score double
             playFieldScoreDouble = False
             
             mediaBackground = vlc.Media(path / 'audio/end.mp3')
@@ -2925,7 +2986,7 @@ if __name__ == "__main__":
         #se hai premuto il tasto start (30) e lo switch 31 e 0 che corrispondono alle biglie a riposo sono sullo stato 1, comincia!
         if wiringpi.digitalRead(65+30) and wiringpi.digitalRead(65+31) and wiringpi.digitalRead(65+0) and attract.getAttractFlag()==True: #start game
             
-            attract.flag = False
+            attract.resetAttractFlag()
             coil_state = [0,0,0,0,0,0,0,0,0]
             GPIO.output(16, 0) #General Illumination
             Thread(target=backgroundMusic).start()
@@ -2970,6 +3031,7 @@ if __name__ == "__main__":
             pallaPersaDaDX = False
             pallaPersaCentro = False
             posPrec = 21
+            aFire = False
             
             
             Thread(target=formulaoneBlink).start()
@@ -2990,7 +3052,7 @@ if __name__ == "__main__":
         elif wiringpi.digitalRead(65+2)==1 and attract.getAttractFlag()==True:
             sleep(.5)
             Thread(target=activeCoilSaucer).start()
-            sleep(2)
+            sleep(1)
         
         #se la partita non è cominciata e la pallina sta sulla rampa di lancio, la lanci
         elif wiringpi.digitalRead(65+1)==1 and attract.getAttractFlag()==True:

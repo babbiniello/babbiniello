@@ -2,11 +2,19 @@ from threading import Thread
 import wiringpi as wiringpi
 from time import sleep
 
-flag = False
+__flag = False
 
 def getAttractFlag():
     global flag
     return flag
+
+def setAttractFlag():
+    global flag
+    flag = True
+    
+def resetAttractFlag():
+    global flag
+    flag = False
 
 def attractMode():
     Thread(target=attractFormulaOne).start()
@@ -21,8 +29,7 @@ def attractMode():
     Thread(target=attractLeft).start()
 
 def attractFormulaOne():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(127, 1)
         sleep(.1)
         wiringpi.digitalWrite(128, 1)
@@ -65,8 +72,7 @@ def attractFormulaOne():
         sleep(.1)
         
 def attractS():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(97, 1)
         sleep(.1)
         wiringpi.digitalWrite(98, 1)
@@ -77,8 +83,7 @@ def attractS():
         sleep(.1)
         
 def attractPopBumper():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(148, 1)
         sleep(.1)
         wiringpi.digitalWrite(149, 1)
@@ -93,8 +98,7 @@ def attractPopBumper():
         sleep(.1)
         
 def attractCenter():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(107, 1)
         sleep(.1)
         wiringpi.digitalWrite(141, 1)
@@ -113,8 +117,7 @@ def attractCenter():
         sleep(.1)
         
 def attract100200300():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(135, 1)
         sleep(.1)
         wiringpi.digitalWrite(136, 1)
@@ -129,8 +132,7 @@ def attract100200300():
         sleep(.1)
         
 def attractX():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(108, 1)
         sleep(.1)
         wiringpi.digitalWrite(109, 1)
@@ -165,8 +167,7 @@ def attractX():
         sleep(.1)
         
 def attractBottom():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(99, 1)
         sleep(.1)
         wiringpi.digitalWrite(116, 1)
@@ -181,8 +182,7 @@ def attractBottom():
         sleep(.1)
         
 def attractKRight():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(117, 1)
         sleep(.1)
         wiringpi.digitalWrite(118, 1)
@@ -209,8 +209,7 @@ def attractKRight():
         sleep(.1)
         
 def attractKLeft():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(100, 1)
         sleep(.1)
         wiringpi.digitalWrite(101, 1)
@@ -241,8 +240,7 @@ def attractKLeft():
         sleep(.1)
         
 def attractLeft():
-    global flag
-    while flag:
+    while getAttractFlag():
         wiringpi.digitalWrite(156, 1)
         sleep(.1)
         wiringpi.digitalWrite(157, 1)
