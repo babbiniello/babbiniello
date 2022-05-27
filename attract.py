@@ -2,7 +2,7 @@ from threading import Thread
 import wiringpi as wiringpi
 from time import sleep
 
-__flag = False
+flag = False
 
 def getAttractFlag():
     global flag
